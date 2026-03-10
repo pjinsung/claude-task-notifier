@@ -1,138 +1,120 @@
 #!/bin/bash
 INPUT=$(cat)
 
-RESULT=$(echo "$INPUT" | node -e "
+# Parse transcript: outputs TYPE, ICON, UMSG on separate lines
+PARSED=$(echo "$INPUT" | node -e "
 const chunks = [];
 process.stdin.on('data', c => chunks.push(c));
 process.stdin.on('end', () => {
+  let type = 'Task Complete', icon = '[V]', msg = 'Task done';
   try {
     const data = JSON.parse(chunks.join(''));
     const fs = require('fs');
-    const lines = fs.readFileSync(data.transcript_path, 'utf8').trim().split('\n');
+    const fd = fs.openSync(data.transcript_path, 'r');
+    const stat = fs.fstatSync(fd);
+    const size = Math.min(stat.size, 524288);
+    const buf = Buffer.alloc(size);
+    fs.readSync(fd, buf, 0, size, stat.size - size);
+    fs.closeSync(fd);
+    let raw = buf.toString('utf8');
+    if (size < stat.size) raw = raw.substring(raw.indexOf('\\n') + 1);
+    const lines = raw.trim().split('\\n');
 
-    let userMsg = 'Task done';
-    const activeTools = new Set();
-    const readTools = new Set(['Read','Grep','Glob','Explore']);
     const writeTools = new Set(['Edit','Write','Bash','NotebookEdit']);
-    let hasQuestion = false;
-    let hasPlan = false;
-    let hasSessionLimit = false;
-    let hasApiError = false;
-    let usedWriteTools = false;
-    let usedReadOnly = false;
-    let lastUserIdx = -1;
+    const sessionRe = /session.?limit/i;
+    let hasQ = false, hasPlan = false, hasSL = false, hasErr = false;
+    let usedWrite = false, tools = 0, foundUser = false;
 
-    // Find last user message index
-    for (let i = lines.length - 1; i >= 0; i--) {
+    for (let i = lines.length - 1; i >= 0 && !foundUser; i--) {
       try {
-        const obj = JSON.parse(lines[i]);
-        if (obj.type === 'user' && obj.message && typeof obj.message.content === 'string' && obj.message.content.trim()) {
-          userMsg = obj.message.content.trim();
-          lastUserIdx = i;
-          break;
-        }
-      } catch(e) {}
-    }
-
-    // Analyze entries after last user message
-    for (let i = Math.max(0, lastUserIdx); i < lines.length; i++) {
-      try {
-        const obj = JSON.parse(lines[i]);
-
-        // Check tool usage in assistant messages
-        if (obj.type === 'assistant' && obj.message && obj.message.content) {
-          const content = Array.isArray(obj.message.content) ? obj.message.content : [obj.message.content];
-          for (const block of content) {
-            if (block.type === 'tool_use') {
-              const name = block.name || '';
-              activeTools.add(name);
-              if (writeTools.has(name)) usedWriteTools = true;
-              if (name === 'AskUserQuestion') hasQuestion = true;
-              if (name === 'EnterPlanMode') hasPlan = true;
+        const o = JSON.parse(lines[i]);
+        if (o.isApiErrorMessage) hasErr = true;
+        if (o.type === 'user' && o.message && typeof o.message.content === 'string') {
+          const t = o.message.content.trim();
+          if (t) { msg = t.substring(0, 100).replace(/[\\r\\n]+/g, ' '); foundUser = true; }
+        } else if (o.type === 'assistant' && o.message && o.message.content) {
+          const c = Array.isArray(o.message.content) ? o.message.content : [o.message.content];
+          for (const b of c) {
+            if (b.type === 'tool_use') {
+              tools++;
+              if (writeTools.has(b.name || '')) usedWrite = true;
+              if (b.name === 'AskUserQuestion') hasQ = true;
+              if (b.name === 'EnterPlanMode') hasPlan = true;
             }
-            // Check text for session limit
-            if (typeof block === 'string' && /session.?limit/i.test(block)) hasSessionLimit = true;
-            if (block.type === 'text' && /session.?limit/i.test(block.text || '')) hasSessionLimit = true;
+            const txt = typeof b === 'string' ? b : (b.type === 'text' ? b.text || '' : '');
+            if (txt && sessionRe.test(txt)) hasSL = true;
           }
         }
-
-        // Check for API errors
-        if (obj.isApiErrorMessage || (obj.type === 'system' && /error|rate.?limit|unauthorized/i.test(JSON.stringify(obj)))) {
-          hasApiError = true;
-        }
       } catch(e) {}
     }
 
-    usedReadOnly = activeTools.size > 0 && !usedWriteTools;
-
-    // Classify notification type
-    let type, icon;
-    if (hasApiError) {
-      type = 'API Error'; icon = '[!]';
-    } else if (hasSessionLimit) {
-      type = 'Session Limit'; icon = '[T]';
-    } else if (hasQuestion) {
-      type = 'Question'; icon = '[?]';
-    } else if (hasPlan) {
-      type = 'Plan Ready'; icon = '[P]';
-    } else if (usedReadOnly) {
-      type = 'Review Complete'; icon = '[R]';
-    } else {
-      type = 'Task Complete'; icon = '[V]';
-    }
-
-    process.stdout.write(JSON.stringify({ type, icon, userMsg: userMsg.substring(0, 100) }));
-  } catch(e) {
-    process.stdout.write(JSON.stringify({ type: 'Task Complete', icon: '[V]', userMsg: 'Task done' }));
-  }
+    if (hasErr) { type = 'API Error'; icon = '[!]'; }
+    else if (hasSL) { type = 'Session Limit'; icon = '[T]'; }
+    else if (hasQ) { type = 'Question'; icon = '[?]'; }
+    else if (hasPlan) { type = 'Plan Ready'; icon = '[P]'; }
+    else if (tools > 0 && !usedWrite) { type = 'Review Complete'; icon = '[R]'; }
+  } catch(e) {}
+  process.stdout.write(type + '\\n' + icon + '\\n' + msg);
 });
 " 2>/dev/null)
 
-if [ -z "$RESULT" ]; then
-  RESULT='{"type":"Task Complete","icon":"[V]","userMsg":"Task done"}'
+# Parse newline-delimited output
+if [ -z "$PARSED" ]; then
+  TYPE='Task Complete'; ICON='[V]'; UMSG='Task done'
+else
+  { read -r TYPE; read -r ICON; read -r UMSG; } <<< "$PARSED"
 fi
 
-TYPE=$(echo "$RESULT" | node -e "process.stdin.on('data',d=>{try{process.stdout.write(JSON.parse(d).type)}catch(e){process.stdout.write('Task Complete')}})" 2>/dev/null)
-ICON=$(echo "$RESULT" | node -e "process.stdin.on('data',d=>{try{process.stdout.write(JSON.parse(d).icon)}catch(e){process.stdout.write('[V]')}})" 2>/dev/null)
-UMSG=$(echo "$RESULT" | node -e "process.stdin.on('data',d=>{try{process.stdout.write(JSON.parse(d).userMsg)}catch(e){process.stdout.write('Task done')}})" 2>/dev/null)
+# Sanitize for PowerShell string embedding
+UMSG="${UMSG//\'/\'\'}"
+UMSG="${UMSG//\`/}"
+UMSG="${UMSG//\$/}"
 
-UMSG=$(echo "$UMSG" | sed "s/'/''/g")
+# Get Windows PID (Git Bash $$ is MSYS internal PID, not Windows PID)
+CURRENT_PID=$(cat /proc/$$/winpid 2>/dev/null || echo $$)
 
+# Taskbar flash (synchronous - needs process tree while bash is alive)
 powershell.exe -ExecutionPolicy Bypass -Command "
-  Add-Type -AssemblyName System.Windows.Forms
+  \$startPid = ${CURRENT_PID}
 
-  # Flash taskbar orange - find Windows Terminal window
   Add-Type -TypeDefinition @'
   using System;
   using System.Runtime.InteropServices;
   public struct FLASHWINFO {
-    public uint cbSize;
-    public IntPtr hwnd;
-    public uint dwFlags;
-    public uint uCount;
-    public uint dwTimeout;
+    public uint cbSize; public IntPtr hwnd; public uint dwFlags;
+    public uint uCount; public uint dwTimeout;
   }
   public class TaskbarFlash {
-    [DllImport(\"user32.dll\")] public static extern bool FlashWindowEx(ref FLASHWINFO pwfi);
-    public const uint FLASHW_ALL = 3;
-    public const uint FLASHW_TIMERNOFG = 12;
-    public static void Flash(IntPtr hwnd) {
-      if (hwnd == IntPtr.Zero) return;
-      FLASHWINFO fi = new FLASHWINFO();
-      fi.cbSize = (uint)Marshal.SizeOf(fi);
-      fi.hwnd = hwnd;
-      fi.dwFlags = FLASHW_ALL | FLASHW_TIMERNOFG;
-      fi.uCount = 0;
-      fi.dwTimeout = 0;
+    [DllImport(\"user32.dll\")] public static extern bool FlashWindowEx(ref FLASHWINFO fi);
+    public static void Flash(IntPtr h) {
+      if (h == IntPtr.Zero) return;
+      var fi = new FLASHWINFO();
+      fi.cbSize = (uint)Marshal.SizeOf(fi); fi.hwnd = h;
+      fi.dwFlags = 15; fi.uCount = 0; fi.dwTimeout = 0;
       FlashWindowEx(ref fi);
     }
   }
 '@
-  # Find Windows Terminal with Claude in title
-  \$wt = Get-Process WindowsTerminal -EA SilentlyContinue | Where-Object { \$_.MainWindowTitle -match 'Claude' -and \$_.MainWindowHandle -ne 0 }
-  if (\$wt) { [TaskbarFlash]::Flash(\$wt.MainWindowHandle) }
 
-  # Balloon notification
+  \$cpid = \$startPid
+  \$hwnd = [IntPtr]::Zero
+  for (\$i = 0; \$i -lt 15; \$i++) {
+    try {
+      \$p = Get-Process -Id \$cpid -EA Stop
+      if (\$p.ProcessName -eq 'WindowsTerminal') {
+        if (\$p.MainWindowHandle -ne 0) { \$hwnd = \$p.MainWindowHandle }
+        break
+      }
+      \$cpid = (Get-CimInstance Win32_Process -Filter \"ProcessId=\$cpid\" -EA Stop).ParentProcessId
+      if (-not \$cpid) { break }
+    } catch { break }
+  }
+  if (\$hwnd -ne [IntPtr]::Zero) { [TaskbarFlash]::Flash(\$hwnd) }
+" 2>/dev/null
+
+# Balloon notification (background - 5.5s sleep doesn't block hook)
+powershell.exe -ExecutionPolicy Bypass -Command "
+  Add-Type -AssemblyName System.Windows.Forms
   \$n = New-Object System.Windows.Forms.NotifyIcon
   \$n.Icon = [System.Drawing.SystemIcons]::Information
   \$n.BalloonTipIcon = 'Info'
@@ -142,4 +124,4 @@ powershell.exe -ExecutionPolicy Bypass -Command "
   \$n.ShowBalloonTip(5000)
   Start-Sleep -Milliseconds 5500
   \$n.Dispose()
-"
+" 2>/dev/null &
