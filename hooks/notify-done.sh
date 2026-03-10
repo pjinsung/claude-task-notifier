@@ -74,7 +74,7 @@ UMSG="${UMSG//\$/}"
 CURRENT_PID=$(cat /proc/$$/winpid 2>/dev/null || echo $$)
 
 # Taskbar flash (synchronous - needs process tree while bash is alive)
-powershell.exe -ExecutionPolicy Bypass -Command "
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
   \$startPid = ${CURRENT_PID}
 
   Add-Type -TypeDefinition @'
@@ -113,7 +113,7 @@ powershell.exe -ExecutionPolicy Bypass -Command "
 " 2>/dev/null
 
 # Balloon notification (background - 5.5s sleep doesn't block hook)
-powershell.exe -ExecutionPolicy Bypass -Command "
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "
   Add-Type -AssemblyName System.Windows.Forms
   \$n = New-Object System.Windows.Forms.NotifyIcon
   \$n.Icon = [System.Drawing.SystemIcons]::Information
