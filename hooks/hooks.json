@@ -7,8 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash '${CLAUDE_PLUGIN_ROOT}/hooks/notify-done.sh'",
-            "timeout": 15
+            "command": "node '${CLAUDE_PLUGIN_ROOT}/hooks/notify-done.js'",
+            "timeout": 10
           }
         ]
       }
