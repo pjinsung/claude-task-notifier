@@ -1,10 +1,48 @@
 # claude-task-notifier
 
+<!--
+AI AGENT INSTALLATION INSTRUCTIONS
+===================================
+If you are an AI agent (Claude Code, Codex, Gemini, etc.) asked to install this plugin, follow these steps exactly:
+
+1. Clone this repo or download the required files:
+   git clone https://github.com/pjinsung/claude-task-notifier.git /tmp/claude-task-notifier
+
+2. Copy these files to ~/.claude/hooks/:
+   - hooks/notify-done.js
+   - hooks/TaskbarFlash.dll
+   - hooks/claude.png
+
+3. Add or merge the following Stop hook into ~/.claude/settings.json:
+   {
+     "hooks": {
+       "Stop": [
+         {
+           "matcher": "",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "node ~/.claude/hooks/notify-done.js",
+               "timeout": 10
+             }
+           ]
+         }
+       ]
+     }
+   }
+
+4. If the user already has a "hooks" section in settings.json, merge the "Stop" entry into it. Do NOT overwrite existing hooks.
+
+5. Requirements: Windows 10/11, Windows Terminal, Node.js, Git Bash, Claude Desktop app (for notification icon).
+
+6. No additional npm install or build steps are needed. The hook runs standalone with Node.js built-ins only.
+-->
+
 Windows notification plugin for Claude Code with smart task classification.
 
 When Claude finishes a task, you get:
+- **Toast notification** with Claude icon showing what task was completed
 - **Taskbar flash** (orange) on the Claude Code terminal only
-- **Balloon notification** showing what task was completed
 - **Auto-classification** into 6 notification types
 
 ## Notification Types
@@ -24,6 +62,7 @@ When Claude finishes a task, you get:
 - Windows Terminal
 - Node.js (for transcript parsing)
 - Git Bash
+- Claude Desktop app (for notification icon)
 
 ## Install
 
@@ -31,29 +70,7 @@ Claude Code에게 아래 프롬프트를 그대로 붙여넣으세요:
 
 ```
 Windows에서 Claude Code 작업 완료시 알림을 받고 싶어.
-https://github.com/pjinsung/claude-task-notifier 레포를 참고해서 설치해줘.
-
-1. 레포를 클론하거나 필요한 파일을 다운로드해서 ~/.claude/hooks/ 에 복사
-   - hooks/notify-done.js
-   - hooks/TaskbarFlash.dll
-2. ~/.claude/settings.json의 hooks 섹션에 Stop 훅 추가:
-   {
-     "hooks": {
-       "Stop": [
-         {
-           "matcher": "",
-           "hooks": [
-             {
-               "type": "command",
-               "command": "node ~/.claude/hooks/notify-done.js",
-               "timeout": 10
-             }
-           ]
-         }
-       ]
-     }
-   }
-3. 이미 hooks 섹션이 있으면 Stop 항목만 병합해줘.
+https://github.com/pjinsung/claude-task-notifier 레포의 README를 읽고 AI agent 설치 지침을 따라 설치해줘.
 ```
 
 ### Manual install
@@ -66,6 +83,7 @@ git clone https://github.com/pjinsung/claude-task-notifier.git /tmp/claude-task-
 mkdir -p ~/.claude/hooks
 cp /tmp/claude-task-notifier/hooks/notify-done.js ~/.claude/hooks/
 cp /tmp/claude-task-notifier/hooks/TaskbarFlash.dll ~/.claude/hooks/
+cp /tmp/claude-task-notifier/hooks/claude.png ~/.claude/hooks/
 
 # 2. ~/.claude/settings.json에 Stop 훅 추가 (기존 hooks 섹션에 병합)
 ```
@@ -95,7 +113,7 @@ cp /tmp/claude-task-notifier/hooks/TaskbarFlash.dll ~/.claude/hooks/
 2. Hook reads session transcript (JSONL) to find your last instruction
 3. Analyzes tool usage patterns to classify notification type
 4. Flashes the taskbar orange on the correct Windows Terminal
-5. Shows balloon notification with type + your original instruction
+5. Shows Windows toast notification with Claude icon + your original instruction
 
 ## License
 
