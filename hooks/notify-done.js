@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-const { execFileSync, spawn } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -60,11 +60,17 @@ process.stdin.on('end', () => {
     else if (tools > 0 && !usedWrite) { type = 'Review Complete'; icon = '[R]'; }
   } catch(e) {}
 
+  // === Convert Git Bash paths (/c/Users/...) to Windows paths (C:\Users\...) ===
+  function toWinPath(p) {
+    return p.replace(/^\/([a-zA-Z])\//, '$1:\\').replace(/\//g, '\\');
+  }
+
   // === Sanitize for PS single-quoted strings ===
   const safeMsg = msg.replace(/'/g, "''").replace(/[`$]/g, '');
   const safeType = type.replace(/'/g, "''");
-  const dllPath = path.join(__dirname, 'TaskbarFlash.dll').replace(/'/g, "''");
-  const cachePath = path.join(os.tmpdir(), 'claude-flash-hwnd.json').replace(/'/g, "''");
+  const dllPath = toWinPath(path.join(__dirname, 'TaskbarFlash.dll')).replace(/'/g, "''");
+  const icoPath = toWinPath(path.join(__dirname, 'claude.ico')).replace(/'/g, "''");
+  const cachePath = toWinPath(path.join(os.tmpdir(), 'claude-flash-hwnd.json')).replace(/'/g, "''");
 
   // === Flash: sync, uses HWND cache ===
   const flashCmd = [
@@ -102,18 +108,23 @@ process.stdin.on('end', () => {
     "}"
   ].join('\n');
 
-  // === Balloon: async, detached ===
-  const balloonCmd = [
-    "Add-Type -AssemblyName System.Windows.Forms",
-    "$n = New-Object System.Windows.Forms.NotifyIcon",
-    "$n.Icon = [System.Drawing.SystemIcons]::Information",
-    "$n.BalloonTipIcon = 'Info'",
-    "$n.BalloonTipTitle = 'Claude Code - " + safeType + "'",
-    "$n.BalloonTipText = '" + icon + " " + safeMsg + "'",
-    "$n.Visible = $true",
-    "$n.ShowBalloonTip(5000)",
-    "Start-Sleep -Milliseconds 5500",
-    "$n.Dispose()"
+  // === Toast: sync, uses Claude Desktop AppId + appLogoOverride for icon ===
+  const pngPath = toWinPath(path.join(__dirname, 'claude.png')).replace(/"/g, '');
+  // Sanitize for XML content (escape &, <, >)
+  const xmlSafe = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const xmlType = xmlSafe('Claude Code - ' + type);
+  const xmlMsg = xmlSafe(icon + ' ' + msg);
+  const toastXml = '<toast><visual><binding template="ToastGeneric">' +
+    '<image placement="appLogoOverride" hint-crop="circle" src="' + pngPath + '"/>' +
+    '<text>' + xmlType + '</text><text>' + xmlMsg + '</text>' +
+    '</binding></visual></toast>';
+  const toastCmd = [
+    "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null",
+    "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null",
+    "$doc = New-Object Windows.Data.Xml.Dom.XmlDocument",
+    '$doc.LoadXml("' + toastXml.replace(/"/g, '`"') + '")',
+    "$toast = New-Object Windows.UI.Notifications.ToastNotification($doc)",
+    "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Claude_pzs8sxrjxfjjc!Claude').Show($toast)"
   ].join('\n');
 
   // Run flash synchronously (node stays alive → process tree intact)
@@ -124,10 +135,13 @@ process.stdin.on('end', () => {
     ], { stdio: 'ignore', timeout: 10000 });
   } catch(e) {}
 
-  // Run balloon detached (node exits, balloon lives on)
-  const child = spawn('powershell.exe', [
-    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-    '-EncodedCommand', encodePS(balloonCmd)
-  ], { stdio: 'ignore', detached: true });
-  child.unref();
+  // Run toast synchronously so the hook keeps the process alive long enough
+  // for Windows to accept the notification, but cap it well under the 10s
+  // hook timeout budget.
+  try {
+    execFileSync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-EncodedCommand', encodePS(toastCmd)
+    ], { stdio: 'ignore', timeout: 3000 });
+  } catch(e) {}
 });
