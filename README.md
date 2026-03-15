@@ -27,17 +27,66 @@ When Claude finishes a task, you get:
 
 ## Install
 
-### From GitHub marketplace
+Claude Code에게 아래 프롬프트를 그대로 붙여넣으세요:
 
 ```
-/plugin marketplace add pjinsung/claude-task-notifier
-/plugin install claude-task-notifier@claude-task-notifier
+Windows에서 Claude Code 작업 완료시 알림을 받고 싶어.
+https://github.com/pjinsung/claude-task-notifier 레포를 참고해서 설치해줘.
+
+1. 레포를 클론하거나 필요한 파일을 다운로드해서 ~/.claude/hooks/ 에 복사
+   - hooks/notify-done.js
+   - hooks/TaskbarFlash.dll
+2. ~/.claude/settings.json의 hooks 섹션에 Stop 훅 추가:
+   {
+     "hooks": {
+       "Stop": [
+         {
+           "matcher": "",
+           "hooks": [
+             {
+               "type": "command",
+               "command": "node ~/.claude/hooks/notify-done.js",
+               "timeout": 10
+             }
+           ]
+         }
+       ]
+     }
+   }
+3. 이미 hooks 섹션이 있으면 Stop 항목만 병합해줘.
 ```
 
-### Manual
+### Manual install
 
+직접 설치하려면:
+
+```bash
+# 1. 파일 복사
+git clone https://github.com/pjinsung/claude-task-notifier.git /tmp/claude-task-notifier
+mkdir -p ~/.claude/hooks
+cp /tmp/claude-task-notifier/hooks/notify-done.js ~/.claude/hooks/
+cp /tmp/claude-task-notifier/hooks/TaskbarFlash.dll ~/.claude/hooks/
+
+# 2. ~/.claude/settings.json에 Stop 훅 추가 (기존 hooks 섹션에 병합)
 ```
-/plugin install --git https://github.com/pjinsung/claude-task-notifier.git
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ~/.claude/hooks/notify-done.js",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
 ## How it works
