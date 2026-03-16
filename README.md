@@ -40,23 +40,12 @@
 
 6. No additional `npm install` or build steps are needed. The hook runs standalone with Node.js built-ins only.
 
-Windows notification plugin for Claude Code with smart task classification.
+Windows notification plugin for Claude Code.
 
-When Claude finishes a task, you get:
-- **Toast notification** with Claude icon showing what task was completed
+When Claude finishes a task or needs your input, you get:
+- **Toast notification** with Claude icon + your last instruction
 - **Taskbar flash** (orange) on the Claude Code terminal only
-- **Auto-classification** into 6 notification types
-
-## Notification Types
-
-| Type | Trigger |
-|------|---------|
-| **Task Complete** | Write/Edit/Bash tools used |
-| **Review Complete** | Read-only tools (Grep/Glob/Read) |
-| **Question** | Claude needs your input |
-| **Plan Ready** | Plan mode completed |
-| **Session Limit** | Usage quota reached |
-| **API Error** | Auth/rate limit/server errors |
+- **Session name** displayed if you used `/rename` (otherwise shows "Claude Code")
 
 ## Requirements
 
@@ -113,9 +102,9 @@ cp /tmp/claude-task-notifier/hooks/claude.png ~/.claude/hooks/
 
 1. Claude Code fires `Stop` hook when it finishes responding
 2. Hook reads session transcript (JSONL) to find your last instruction
-3. Analyzes tool usage patterns to classify notification type
+3. Looks up session name from `/rename` history (if set)
 4. Flashes the taskbar orange on the correct Windows Terminal
-5. Shows Windows toast notification with Claude icon + your original instruction
+5. Shows Windows toast notification with Claude icon, session name + your original instruction
 
 ## License
 

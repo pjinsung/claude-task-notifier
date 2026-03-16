@@ -8,13 +8,38 @@ function encodePS(cmd) {
   return Buffer.from(cmd, 'utf16le').toString('base64');
 }
 
+function toWinPath(p) {
+  return p.replace(/^\/([a-zA-Z])\//, '$1:\\').replace(/\//g, '\\');
+}
+
 let input = '';
 process.stdin.on('data', c => input += c);
 process.stdin.on('end', () => {
-  // === Transcript parsing ===
-  let type = 'Task Complete', icon = '[V]', msg = 'Task done';
+  // === Extract last user message from transcript ===
+  let msg = 'Task done';
+  let sessionName = null;
+  let sessionId = null;
   try {
     const data = JSON.parse(input);
+    sessionId = data.session_id;
+
+    // Lookup session name from /rename history (~6ms)
+    if (sessionId) {
+      try {
+        const histPath = path.join(os.homedir(), '.claude', 'history.jsonl');
+        const hist = fs.readFileSync(histPath, 'utf8').trim().split('\n');
+        for (let i = hist.length - 1; i >= 0; i--) {
+          try {
+            const h = JSON.parse(hist[i]);
+            if (h.sessionId === sessionId && h.display && h.display.startsWith('/rename ')) {
+              sessionName = h.display.substring(8).trim();
+              break;
+            }
+          } catch(e) {}
+        }
+      } catch(e) {}
+    }
+
     const fd = fs.openSync(data.transcript_path, 'r');
     const stat = fs.fstatSync(fd);
     const size = Math.min(stat.size, 524288);
@@ -24,58 +49,33 @@ process.stdin.on('end', () => {
     let raw = buf.toString('utf8');
     if (size < stat.size) raw = raw.substring(raw.indexOf('\n') + 1);
     const lines = raw.trim().split('\n');
-
-    const writeTools = new Set(['Edit','Write','Bash','NotebookEdit']);
-    const sessionRe = /session.?limit/i;
-    let hasQ=false, hasPlan=false, hasSL=false, hasErr=false;
-    let usedWrite=false, tools=0, foundUser=false;
-
-    for (let i = lines.length-1; i >= 0 && !foundUser; i--) {
+    for (let i = lines.length - 1; i >= 0; i--) {
       try {
         const o = JSON.parse(lines[i]);
-        if (o.isApiErrorMessage) hasErr = true;
         if (o.type === 'user' && o.message && typeof o.message.content === 'string') {
           const t = o.message.content.trim();
-          if (t) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); foundUser = true; }
-        } else if (o.type === 'assistant' && o.message && o.message.content) {
-          const c = Array.isArray(o.message.content) ? o.message.content : [o.message.content];
-          for (const b of c) {
-            if (b.type === 'tool_use') {
-              tools++;
-              if (writeTools.has(b.name || '')) usedWrite = true;
-              if (b.name === 'AskUserQuestion') hasQ = true;
-              if (b.name === 'EnterPlanMode') hasPlan = true;
-            }
-            const txt = typeof b === 'string' ? b : (b.type === 'text' ? b.text || '' : '');
-            if (txt && sessionRe.test(txt)) hasSL = true;
-          }
+          if (t) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); break; }
         }
       } catch(e) {}
     }
-
-    if (hasErr) { type = 'API Error'; icon = '[!]'; }
-    else if (hasSL) { type = 'Session Limit'; icon = '[T]'; }
-    else if (hasQ) { type = 'Question'; icon = '[?]'; }
-    else if (hasPlan) { type = 'Plan Ready'; icon = '[P]'; }
-    else if (tools > 0 && !usedWrite) { type = 'Review Complete'; icon = '[R]'; }
   } catch(e) {}
 
-  // === Convert Git Bash paths (/c/Users/...) to Windows paths (C:\Users\...) ===
-  function toWinPath(p) {
-    return p.replace(/^\/([a-zA-Z])\//, '$1:\\').replace(/\//g, '\\');
-  }
+  const dllPath = toWinPath(path.join(__dirname, 'TaskbarFlash.dll'));
+  const pngPath = toWinPath(path.join(__dirname, 'claude.png'));
+  const cachePath = toWinPath(path.join(os.tmpdir(), 'claude-flash-hwnd.json'));
+  const xmlSafe = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const xmlMsg = xmlSafe(msg);
 
-  // === Sanitize for PS single-quoted strings ===
-  const safeMsg = msg.replace(/'/g, "''").replace(/[`$]/g, '');
-  const safeType = type.replace(/'/g, "''");
-  const dllPath = toWinPath(path.join(__dirname, 'TaskbarFlash.dll')).replace(/'/g, "''");
-  const icoPath = toWinPath(path.join(__dirname, 'claude.ico')).replace(/'/g, "''");
-  const cachePath = toWinPath(path.join(os.tmpdir(), 'claude-flash-hwnd.json')).replace(/'/g, "''");
+  const toastXml = '<toast launch="dismiss" activationType="protocol"><visual><binding template="ToastGeneric">' +
+    '<image placement="appLogoOverride" hint-crop="circle" src="' + pngPath + '"/>' +
+    '<text>' + xmlSafe(sessionName || 'Claude Code') + '</text><text>' + xmlMsg + '</text>' +
+    '</binding></visual></toast>';
 
-  // === Flash: sync, uses HWND cache ===
-  const flashCmd = [
+  // === Single PowerShell call: flash + toast ===
+  const psCmd = [
+    // Flash
     "$hwnd = [IntPtr]::Zero",
-    "$cacheFile = '" + cachePath + "'",
+    "$cacheFile = '" + cachePath.replace(/'/g, "''") + "'",
     "$cached = $false",
     "if (Test-Path $cacheFile) {",
     "  try {",
@@ -103,22 +103,10 @@ process.stdin.on('end', () => {
     "  }",
     "}",
     "if ($hwnd -ne [IntPtr]::Zero) {",
-    "  Add-Type -Path '" + dllPath + "'",
+    "  Add-Type -Path '" + dllPath.replace(/'/g, "''") + "'",
     "  [TaskbarFlash]::Flash($hwnd)",
-    "}"
-  ].join('\n');
-
-  // === Toast: sync, uses Claude Desktop AppId + appLogoOverride for icon ===
-  const pngPath = toWinPath(path.join(__dirname, 'claude.png')).replace(/"/g, '');
-  // Sanitize for XML content (escape &, <, >)
-  const xmlSafe = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const xmlType = xmlSafe('Claude Code - ' + type);
-  const xmlMsg = xmlSafe(icon + ' ' + msg);
-  const toastXml = '<toast launch="dismiss" activationType="protocol"><visual><binding template="ToastGeneric">' +
-    '<image placement="appLogoOverride" hint-crop="circle" src="' + pngPath + '"/>' +
-    '<text>' + xmlType + '</text><text>' + xmlMsg + '</text>' +
-    '</binding></visual></toast>';
-  const toastCmd = [
+    "}",
+    // Toast
     "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null",
     "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null",
     "$doc = New-Object Windows.Data.Xml.Dom.XmlDocument",
@@ -127,21 +115,10 @@ process.stdin.on('end', () => {
     "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Claude_pzs8sxrjxfjjc!Claude').Show($toast)"
   ].join('\n');
 
-  // Run flash synchronously (node stays alive → process tree intact)
   try {
     execFileSync('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-EncodedCommand', encodePS(flashCmd)
+      '-EncodedCommand', encodePS(psCmd)
     ], { stdio: 'ignore', timeout: 10000 });
-  } catch(e) {}
-
-  // Run toast synchronously so the hook keeps the process alive long enough
-  // for Windows to accept the notification, but cap it well under the 10s
-  // hook timeout budget.
-  try {
-    execFileSync('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-      '-EncodedCommand', encodePS(toastCmd)
-    ], { stdio: 'ignore', timeout: 3000 });
   } catch(e) {}
 });
