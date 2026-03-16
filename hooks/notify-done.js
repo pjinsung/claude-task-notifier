@@ -54,7 +54,7 @@ process.stdin.on('end', () => {
         const o = JSON.parse(lines[i]);
         if (o.type === 'user' && o.message && typeof o.message.content === 'string') {
           const t = o.message.content.trim();
-          if (t) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); break; }
+          if (t && !t.startsWith('<task-notification>')) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); break; }
         }
       } catch(e) {}
     }
