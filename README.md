@@ -1,19 +1,21 @@
 # claude-task-notifier
 
-<!--
-AI AGENT INSTALLATION INSTRUCTIONS
-===================================
-If you are an AI agent (Claude Code, Codex, Gemini, etc.) asked to install this plugin, follow these steps exactly:
+## AI Agent Installation
+
+> **For AI agents** (Claude Code, Codex, Gemini, etc.) — follow these steps exactly when asked to install this plugin:
 
 1. Clone this repo or download the required files:
+   ```bash
    git clone https://github.com/pjinsung/claude-task-notifier.git /tmp/claude-task-notifier
+   ```
 
-2. Copy these files to ~/.claude/hooks/:
-   - hooks/notify-done.js
-   - hooks/TaskbarFlash.dll
-   - hooks/claude.png
+2. Copy these files to `~/.claude/hooks/`:
+   - `hooks/notify-done.js`
+   - `hooks/TaskbarFlash.dll`
+   - `hooks/claude.png`
 
-3. Add or merge the following Stop hook into ~/.claude/settings.json:
+3. Add or merge the following Stop hook into `~/.claude/settings.json`:
+   ```json
    {
      "hooks": {
        "Stop": [
@@ -30,13 +32,13 @@ If you are an AI agent (Claude Code, Codex, Gemini, etc.) asked to install this 
        ]
      }
    }
+   ```
 
-4. If the user already has a "hooks" section in settings.json, merge the "Stop" entry into it. Do NOT overwrite existing hooks.
+4. If the user already has a `"hooks"` section in `settings.json`, **merge** the `"Stop"` entry into it. Do **NOT** overwrite existing hooks.
 
-5. Requirements: Windows 10/11, Windows Terminal, Node.js, Git Bash, Claude Desktop app (for notification icon).
+5. **Requirements**: Windows 10/11, Windows Terminal, Node.js, Git Bash, Claude Desktop app (for notification icon).
 
-6. No additional npm install or build steps are needed. The hook runs standalone with Node.js built-ins only.
--->
+6. No additional `npm install` or build steps are needed. The hook runs standalone with Node.js built-ins only.
 
 Windows notification plugin for Claude Code with smart task classification.
 
