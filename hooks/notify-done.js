@@ -42,7 +42,7 @@ process.stdin.on('end', () => {
 
     const fd = fs.openSync(data.transcript_path, 'r');
     const stat = fs.fstatSync(fd);
-    const size = Math.min(stat.size, 524288);
+    const size = Math.min(stat.size, 1048576);
     const buf = Buffer.alloc(size);
     fs.readSync(fd, buf, 0, size, stat.size - size);
     fs.closeSync(fd);
@@ -54,7 +54,7 @@ process.stdin.on('end', () => {
         const o = JSON.parse(lines[i]);
         if (o.type === 'user' && o.message && typeof o.message.content === 'string') {
           const t = o.message.content.trim();
-          if (t && !t.startsWith('<task-notification>')) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); break; }
+          if (t && !t.startsWith('<')) { msg = t.substring(0, 100).replace(/[\r\n]+/g, ' '); break; }
         }
       } catch(e) {}
     }
