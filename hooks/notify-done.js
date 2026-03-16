@@ -114,7 +114,7 @@ process.stdin.on('end', () => {
   const xmlSafe = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const xmlType = xmlSafe('Claude Code - ' + type);
   const xmlMsg = xmlSafe(icon + ' ' + msg);
-  const toastXml = '<toast><visual><binding template="ToastGeneric">' +
+  const toastXml = '<toast launch="dismiss" activationType="protocol"><visual><binding template="ToastGeneric">' +
     '<image placement="appLogoOverride" hint-crop="circle" src="' + pngPath + '"/>' +
     '<text>' + xmlType + '</text><text>' + xmlMsg + '</text>' +
     '</binding></visual></toast>';
