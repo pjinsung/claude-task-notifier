@@ -62,7 +62,6 @@ process.stdin.on('end', () => {
 
   const dllPath = toWinPath(path.join(__dirname, 'TaskbarFlash.dll'));
   const pngPath = toWinPath(path.join(__dirname, 'claude.png'));
-  const cachePath = toWinPath(path.join(os.tmpdir(), 'claude-flash-hwnd.json'));
   const xmlSafe = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const xmlMsg = xmlSafe(msg);
 
@@ -73,34 +72,19 @@ process.stdin.on('end', () => {
 
   // === Single PowerShell call: flash + toast ===
   const psCmd = [
-    // Flash
+    // Flash - always walk process tree to find correct Terminal window
     "$hwnd = [IntPtr]::Zero",
-    "$cacheFile = '" + cachePath.replace(/'/g, "''") + "'",
-    "$cached = $false",
-    "if (Test-Path $cacheFile) {",
+    "$cpid = " + process.pid,
+    "for ($i = 0; $i -lt 15; $i++) {",
     "  try {",
-    "    $c = Get-Content $cacheFile -Raw | ConvertFrom-Json",
-    "    $p = Get-Process -Id $c.pid -EA Stop",
-    "    if ($p.ProcessName -eq 'WindowsTerminal' -and $p.MainWindowHandle -ne 0) {",
-    "      $hwnd = [IntPtr]$c.hwnd; $cached = $true",
+    "    $p = Get-Process -Id $cpid -EA Stop",
+    "    if ($p.ProcessName -eq 'WindowsTerminal') {",
+    "      if ($p.MainWindowHandle -ne 0) { $hwnd = $p.MainWindowHandle }",
+    "      break",
     "    }",
-    "  } catch {}",
-    "}",
-    "if (-not $cached) {",
-    "  $cpid = " + process.pid,
-    "  for ($i = 0; $i -lt 15; $i++) {",
-    "    try {",
-    "      $p = Get-Process -Id $cpid -EA Stop",
-    "      if ($p.ProcessName -eq 'WindowsTerminal') {",
-    "        if ($p.MainWindowHandle -ne 0) {",
-    "          $hwnd = $p.MainWindowHandle",
-    "          @{pid=$cpid;hwnd=$hwnd.ToInt64()} | ConvertTo-Json | Set-Content $cacheFile",
-    "        }; break",
-    "      }",
-    "      $cpid = (Get-CimInstance Win32_Process -Filter \"ProcessId=$cpid\" -EA Stop).ParentProcessId",
-    "      if (-not $cpid) { break }",
-    "    } catch { break }",
-    "  }",
+    "    $cpid = (Get-CimInstance Win32_Process -Filter \"ProcessId=$cpid\" -EA Stop).ParentProcessId",
+    "    if (-not $cpid) { break }",
+    "  } catch { break }",
     "}",
     "if ($hwnd -ne [IntPtr]::Zero) {",
     "  Add-Type -Path '" + dllPath.replace(/'/g, "''") + "'",
