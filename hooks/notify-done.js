@@ -15,6 +15,17 @@ function toWinPath(p) {
 let input = '';
 process.stdin.on('data', c => input += c);
 process.stdin.on('end', () => {
+  // === Skip neo-mem background sessions (patrol, memory extraction) ===
+  try {
+    const payload = JSON.parse(input);
+    const tp = (payload.transcript_path || '').replace(/\\/g, '/');
+    const cwd = (payload.cwd || '').replace(/\\/g, '/');
+    if (tp.includes('neo-mem-patrol') || tp.includes('neo-mem') ||
+        cwd.includes('.neo-mem/') || cwd.includes('neo-mem')) {
+      process.exit(0);
+    }
+  } catch(e) {}
+
   // === Extract last user message from transcript ===
   let msg = 'Task done';
   let sessionName = null;
